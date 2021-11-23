@@ -4,29 +4,21 @@ from transformers import AutoTokenizer, AutoModelForTokenClassification, Trainin
 from sklearn.model_selection import KFold
 
 from data_processing import TorchData, train_and_tags
-#from metrics import compute_metrics_token
 
 cat_map = {'Unbalanced_power_relations':0, 'Shallow_solution':1, 
                'Presupposition':2, 'Authority_voice':3, 'Metaphors':4,
                'Compassion':5, 'The_poorer_the_merrier':6}
 
 
-id2tag = {}
-#i will fix this
+tag2id = {}
+
 def compute_metrics_token(pred):
     preds, labels = pred
     preds = np.argmax(preds, axis=2)
 
-    b = 0
-    i = 0
-    o = 0
-    for j in range(0,3):
-        if 'B' in id2tag[j]:
-            b = j
-        if 'O' in id2tag[j]:
-            o = j
-        if 'I' in id2tag[j]:
-            i = j
+    b = tag2id['B']
+    i = tag2id['I']
+    o = tag2id['O']
 
     tp = 0
     fn = 0
@@ -65,10 +57,9 @@ def tokenize_and_align_labels(tokenizer, X, tags, keep_word_split=True):
     X = [x.split(' ') for x in X]
     tokenized_inputs = tokenizer(X, truncation=True, is_split_into_words=True)
     unique_tags = set(tag for doc in tags for tag in doc)
+    global tag2id
     tag2id = {tag: id for id, tag in enumerate(unique_tags)}
     tags = [[tag2id[tag] for tag in doc] for doc in tags]
-    global id2tag
-    id2tag = {id: tag for tag, id in tag2id.items()}
 
     labels = []
     for i, label in enumerate(tags):
@@ -83,10 +74,8 @@ def tokenize_and_align_labels(tokenizer, X, tags, keep_word_split=True):
             else:
                 label_ids.append(label[word_idx] if keep_word_split else -100)
             previous_word_idx = word_idx
-
         labels.append(label_ids)
 
-    #tokenized_inputs["labels"] = labels
     return tokenized_inputs, labels
 
 
@@ -101,7 +90,7 @@ def main():
         X = np.array(Xs[i])
         y = np.array(tags[i])
 
-        MODEL = 'bert-base-uncased'
+        MODEL = 'distilbert-base-uncased'
         args = TrainingArguments(
             f"{MODEL}-finetuned",
             evaluation_strategy = "epoch",
@@ -124,12 +113,6 @@ def main():
             tokenizer = AutoTokenizer.from_pretrained(MODEL)
             encoded_train, labels_train = tokenize_and_align_labels(tokenizer, X_train.tolist(), y_train.tolist())
             encoded_test, labels_test = tokenize_and_align_labels(tokenizer, X_test.tolist(), y_test.tolist())
-            '''encoded_train = tokenizer([x.split(' ') for x in X_train.tolist()], is_split_into_words=True, return_offsets_mapping=True, padding=True, truncation=True)
-            encoded_test = tokenizer([x.split(' ') for x in X_test.tolist()], is_split_into_words=True, return_offsets_mapping=True, padding=True, truncation=True)
-            labels_train = encode_tags(y_train.tolist(), encoded_train)
-            labels_test = encode_tags(y_test.tolist(), encoded_test)
-            encoded_train.pop("offset_mapping")
-            encoded_test.pop("offset_mapping")'''
 
             data_collator = DataCollatorForTokenClassification(tokenizer)
             model = AutoModelForTokenClassification.from_pretrained(MODEL, num_labels=3)
@@ -148,7 +131,7 @@ def main():
             recall.append(eval_metrics['eval_recall'])
             f1.append(eval_metrics['eval_f1'])
 
-        print(f'Ensemble BERT Model {i}')
+        print(f'Ensemble BERT Token Model {i}')
         print(f'Precision: {precision}')
         print(f'Recall: {recall}')
         print(f'F1 score: {f1}')
@@ -157,7 +140,7 @@ def main():
         recall_all.append(np.mean(recall, axis=0))
         f1_all.append(np.mean(f1, axis=0))
 
-    print(f'Ensemble BERT Models')
+    print(f'Ensemble BERT TOken Models')
     print(f'Precision scores: {precision_all}')
     print(f'Recall scores: {recall_all}')
     print(f'F1 scores: {f1_all}')

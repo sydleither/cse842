@@ -1,6 +1,8 @@
 from torch.utils.data import Dataset
 import numpy as np
 from random import shuffle
+from BackTranslation import BackTranslation
+import regex as re
 
 cat_map = {'Unbalanced_power_relations':0, 'Shallow_solution':1, 
             'Presupposition':2, 'Authority_voice':3, 'Metaphors':4,
@@ -86,6 +88,7 @@ def ensemble_data(text):
     return Xs, ys
 
 
+#token classification where PCL spans are tagged
 def train_and_tags(text):
     data = text.split('\n')[4:-1]
     data = [[int(x.split('\t')[0]),x] for x in data]
@@ -113,9 +116,9 @@ def train_and_tags(text):
                         curr_tag = word[0]
                         if curr_tag != 'O':
                             if prev_tag == 'O':
-                                temp_tags.append('B-'+curr_tag)
+                                temp_tags.append('B')
                             else:
-                                temp_tags.append('I-'+curr_tag)
+                                temp_tags.append('I')
                         else:
                             temp_tags.append('O')
                         prev_tag = curr_tag
@@ -144,12 +147,56 @@ def train_and_tags(text):
             curr_tag = word[0]
             if curr_tag != 'O':
                 if prev_tag == 'O':
-                    temp_tags.append('B-'+curr_tag)
+                    temp_tags.append('B')
                 else:
-                    temp_tags.append('I-'+curr_tag)
+                    temp_tags.append('I')
             else:
                 temp_tags.append('O')
             prev_tag = curr_tag
         tags[i].append(temp_tags)
 
     return Xs, tags
+
+
+def add_backtranslation(X, y):
+    backtranslation = BackTranslation()
+    languages = ['de', 'no', 'fr']
+
+    X_aug = []
+    y_aug = []
+    for i in range(len(y)):
+        xi = X[i]
+        yi = y[i]
+        if yi == 1:
+            for lang in languages:
+                try:
+                    translated = backtranslation.translate(xi, src='en', tmp=lang).result_text
+                    translated = re.sub(r'([a-zA-Z])([!"#$%&\'()*+,-./:;<=>?@^_`{|}~])', r'\1 \2', translated)
+                    if translated != xi:
+                        X_aug.append(translated)
+                        y_aug.append(yi)
+                except:
+                    continue
+        X_aug.append(xi)
+        y_aug.append(yi)
+    
+    return X_aug, y_aug
+
+
+def process_backtranslations(text):
+    Xs = [[],[],[],[],[],[],[]]
+    ys = [[],[],[],[],[],[],[]]
+    for line in text.split('\n'):
+        if len(line) > 0:
+            columns = line.split('\t')
+            lab = columns[0]
+            X = columns[1]
+            y = columns[2]
+            for i in range(len(y)):
+                if y[i] == '1':
+                    Xs[i].append(X)
+                    ys[i].append(1)
+                elif y[i] == '0' and lab == 'og':
+                    Xs[i].append(X)
+                    ys[i].append(0)
+    return Xs, ys

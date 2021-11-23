@@ -4,7 +4,7 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification, Trai
 from sklearn.model_selection import KFold
 from transformers import BertPreTrainedModel, BertModel
 
-from data_processing import TorchData, ensemble_data
+from data_processing import TorchData, ensemble_data, add_backtranslation
 from metrics import compute_metrics_binary
 
 cat_map = {'Unbalanced_power_relations':0, 'Shallow_solution':1, 
@@ -12,25 +12,24 @@ cat_map = {'Unbalanced_power_relations':0, 'Shallow_solution':1,
                'Compassion':5, 'The_poorer_the_merrier':6}
 
 
-def main():
-    pcl = open('data/dontpatronizeme_categories.tsv').read() #TODO some sentences have <h>, not sure if mistake
+def main(MODEL, backtranslation=False):
+    pcl = open('data/dontpatronizeme_categories.tsv').read()
     Xs, ys = ensemble_data(pcl)
 
     precision_all = []
     recall_all = []
     f1_all = []
-    for i in range(len(ys)):
+    for i in len(ys)):
         X = np.array(Xs[i])
         y = np.array(ys[i])
 
-        MODEL = 'bert-base-uncased'
         args = TrainingArguments(
             f"{MODEL}-finetuned",
             evaluation_strategy = "epoch",
             save_strategy = "no",
             learning_rate=2e-5,
-            per_device_train_batch_size=2,
-            per_device_eval_batch_size=2,
+            per_device_train_batch_size=16,
+            per_device_eval_batch_size=16,
             num_train_epochs=10,
             weight_decay=0.01,
             logging_strategy="no"
@@ -40,12 +39,15 @@ def main():
         recall = []
         f1 = []
         for train, test in KFold(10, shuffle=True).split(X, y):
-            X_train, X_test = X[train], X[test]
-            y_train, y_test = y[train], y[test]
+            X_train, X_test = X[train].tolist(), X[test].tolist()
+            y_train, y_test = y[train].tolist(), y[test].tolist()
+
+            if backtranslation:
+                X_train, y_train = add_backtranslation(X_train, y_train)
 
             tokenizer = AutoTokenizer.from_pretrained(MODEL)
-            encoded_train = tokenizer(X_train.tolist(), truncation=True)
-            encoded_test = tokenizer(X_test.tolist(), truncation=True)
+            encoded_train = tokenizer(X_train, truncation=True)
+            encoded_test = tokenizer(X_test, truncation=True)
 
             model = AutoModelForSequenceClassification.from_pretrained(MODEL, num_labels=2)
             trainer = Trainer(
@@ -62,7 +64,7 @@ def main():
             recall.append(eval_metrics['eval_recall'])
             f1.append(eval_metrics['eval_f1'])
 
-        print(f'Ensemble BERT Model {i}')
+        print(f'Ensemble Model {i}')
         print(f'Precision: {precision}')
         print(f'Recall: {recall}')
         print(f'F1 score: {f1}')
@@ -71,11 +73,11 @@ def main():
         recall_all.append(np.mean(recall, axis=0))
         f1_all.append(np.mean(f1, axis=0))
 
-    print(f'Ensemble BERT Models')
+    print(f'Ensemble {MODEL} Models')
     print(f'Precision scores: {precision_all}')
     print(f'Recall scores: {recall_all}')
     print(f'F1 scores: {f1_all}')
 
 
 if __name__ == '__main__':
-    main()
+    main('bert-base-uncased', True)

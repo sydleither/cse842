@@ -13,7 +13,7 @@ cat_map = {'Unbalanced_power_relations':0, 'Shallow_solution':1,
 
 
 def main():
-    pcl = open('data/dontpatronizeme_categories.tsv').read() #TODO some sentences have <h>, not sure if mistake
+    pcl = open('data/dontpatronizeme_categories.tsv').read()
     Xs, ys = ensemble_data(pcl)
 
     precision_all = []
@@ -62,7 +62,7 @@ def main():
             recall.append(eval_metrics['eval_recall'])
             f1.append(eval_metrics['eval_f1'])
 
-        print(f'Ensemble BERT Model {i}')
+        print(f'Ensemble Roberta Model {i}')
         print(f'Precision: {precision}')
         print(f'Recall: {recall}')
         print(f'F1 score: {f1}')

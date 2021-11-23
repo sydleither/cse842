@@ -38,30 +38,3 @@ def compute_metrics_binary(pred):
         'recall': recall,
         'f1': f1
     }
-
-
-def compute_metrics_token(pred):
-    preds, labels = pred
-    preds = np.argmax(preds, axis=2)
-
-    tp = 0
-    fn = 0
-    tn = 0
-    fp = 0
-    for i in range(len(labels)):
-        if (2 in labels[i] and 2 in preds[i]) or (2 in labels[i] and 1 in preds[i]):
-            tp += 1
-        elif (2 in labels[i] and 2 not in preds[i]) or (2 in labels[i] and 1 not in preds[i]):
-            fn += 1
-        elif (2 not in labels[i] and 2 in preds[i]) or (2 not in labels[i] and 1 in preds[i]):
-            fp += 1
-        elif (2 not in labels[i] and 2 not in preds[i]) or (2 not in labels[i] and 1 not in preds[i]):
-            tn += 1
-    precision = tp/(tp+fp)
-    recall = tp/(tp+fn)
-    f1 = 2*(precision*recall)/(precision+recall)
-    return {
-        'precision': precision,
-        'recall': recall,
-        'f1': f1
-    }
