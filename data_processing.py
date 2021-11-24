@@ -1,6 +1,6 @@
 from torch.utils.data import Dataset
 import numpy as np
-from random import shuffle
+from sklearn.utils import shuffle
 from BackTranslation import BackTranslation
 import regex as re
 
@@ -23,67 +23,72 @@ class TorchData(Dataset):
         return item
 
 
-#using the 'span' of PCL to train
-def span_data(text):
-    data = text.split('\n')[4:-1]
-    shuffle(data)
+def span_data(text, train):
+    data = text.split('\n')
     
     X = []
     y = []
     for line in data:
-        columns = line.split('\t')
-        X.append(columns[-3])
-        y.append(cat_map[columns[-2]])
+        if len(line) > 1:
+            columns = line.split('\t')
+            X.append(columns[-3]) if train else X.append(columns[2])
+            y.append(cat_map[columns[-2]])
+
+    X, y = shuffle(X, y)
     
-    return np.array(X), np.array(y)
+    return X, y
 
 
 def multilabel_data(text):
-    data = text.split('\n')[4:-1]
+    data = text.split('\n')
     
     X = []
     y = []
     paragraphs_seen = []
     for line in data:
-        columns = line.split('\t')
-        paragraph_id = columns[0]
-        if paragraph_id not in paragraphs_seen:
-            paragraphs_seen.append(paragraph_id)
-            X.append(columns[2])
-            temp = [0,0,0,0,0,0,0]
-            temp[cat_map[columns[-2]]] = 1
-            y.append(temp)
-        else:
-            temp = y[-1]
-            temp[cat_map[columns[-2]]] = 1
-            y[-1] = temp
+        if len(line) > 1:
+            columns = line.split('\t')
+            paragraph_id = columns[0]
+            if paragraph_id not in paragraphs_seen:
+                paragraphs_seen.append(paragraph_id)
+                X.append(columns[2])
+                temp = [0,0,0,0,0,0,0]
+                temp[cat_map[columns[-2]]] = 1
+                y.append(temp)
+            else:
+                temp = y[-1]
+                temp[cat_map[columns[-2]]] = 1
+                y[-1] = temp
     
-    return np.array(X), np.array(y)
+    X, y = shuffle(X, y)
+    
+    return X, y
 
 
-def ensemble_data(text):
-    data = text.split('\n')[4:-1]
-    data = [[int(x.split('\t')[0]),x] for x in data]
+def binary_data(text):
+    data = text.split('\n')
+    data = [[int(x.split('\t')[0]),x] for x in data if len(x) > 1]
     data = sorted(data, key=lambda x: x[0])
     
     Xs = [[],[],[],[],[],[],[]]
     ys = [[],[],[],[],[],[],[]]
     paragraphs_seen = []
     for line in data:
-        columns = line[1].split('\t')
-        paragraph_id = columns[0]
-        label = cat_map[columns[-2]]
-        if paragraph_id not in paragraphs_seen:
-            paragraphs_seen.append(paragraph_id)
-            for X in Xs:
-                X.append(columns[2])
-            for i,y in enumerate(ys):
-                if i == label:
-                    y.append(1)
-                else:
-                    y.append(0)
-        else:
-            ys[label][-1] = 1
+        if len(line) > 1:
+            columns = line[1].split('\t')
+            paragraph_id = columns[0]
+            label = cat_map[columns[-2]]
+            if paragraph_id not in paragraphs_seen:
+                paragraphs_seen.append(paragraph_id)
+                for X in Xs:
+                    X.append(columns[2])
+                for i,y in enumerate(ys):
+                    if i == label:
+                        y.append(1)
+                    else:
+                        y.append(0)
+            else:
+                ys[label][-1] = 1
     
     return Xs, ys
 
@@ -183,20 +188,25 @@ def add_backtranslation(X, y):
     return X_aug, y_aug
 
 
-def process_backtranslations(text):
-    Xs = [[],[],[],[],[],[],[]]
-    ys = [[],[],[],[],[],[],[]]
-    for line in text.split('\n'):
-        if len(line) > 0:
-            columns = line.split('\t')
-            lab = columns[0]
-            X = columns[1]
-            y = columns[2]
-            for i in range(len(y)):
-                if y[i] == '1':
-                    Xs[i].append(X)
-                    ys[i].append(1)
-                elif y[i] == '0' and lab == 'og':
-                    Xs[i].append(X)
-                    ys[i].append(0)
-    return Xs, ys
+def add_backtranslation_multilabel(X, y):
+    backtranslation = BackTranslation()
+    languages = ['de', 'no', 'fr']
+
+    X_aug = []
+    y_aug = []
+    for i in range(len(y)):
+        xi = X[i]
+        yi = y[i]
+        for lang in languages:
+            try:
+                translated = backtranslation.translate(xi, src='en', tmp=lang).result_text
+                translated = re.sub(r'([a-zA-Z])([!"#$%&\'()*+,-./:;<=>?@^_`{|}~])', r'\1 \2', translated)
+                if translated != xi:
+                    X_aug.append(translated)
+                    y_aug.append(yi)
+            except:
+                continue
+        X_aug.append(xi)
+        y_aug.append(yi)
+    
+    return X_aug, y_aug

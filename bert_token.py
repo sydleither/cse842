@@ -1,13 +1,9 @@
 import numpy as np
 import torch
 from transformers import AutoTokenizer, AutoModelForTokenClassification, TrainingArguments, Trainer, DataCollatorForTokenClassification
-from sklearn.model_selection import KFold
+from sklearn.utils import shuffle
 
 from data_processing import TorchData, train_and_tags
-
-cat_map = {'Unbalanced_power_relations':0, 'Shallow_solution':1, 
-               'Presupposition':2, 'Authority_voice':3, 'Metaphors':4,
-               'Compassion':5, 'The_poorer_the_merrier':6}
 
 
 tag2id = {}
@@ -80,15 +76,23 @@ def tokenize_and_align_labels(tokenizer, X, tags, keep_word_split=True):
 
 
 def main():
-    pcl = open('data/dontpatronizeme_categories.tsv').read()
-    Xs, tags = train_and_tags(pcl)
+    train = open('data/train.tsv').read()
+    test = open('data/test.tsv').read()
 
-    precision_all = []
-    recall_all = []
-    f1_all = []
-    for i in range(len(tags)):
-        X = np.array(Xs[i])
-        y = np.array(tags[i])
+    Xs_train, tags_train = train_and_tags(train)
+    Xs_test, tags_test = train_and_tags(test)
+
+    precision = []
+    recall = []
+    f1 = []
+    for i in range(len(tags_train)):
+        X_train = Xs_train[i]
+        X_test = Xs_test[i]
+        y_train = tags_train[i]
+        y_test = tags_test[i]
+
+        X_train, y_train = shuffle(X_train, y_train)
+        X_test, y_test = shuffle(X_test, y_test)
 
         MODEL = 'distilbert-base-uncased'
         args = TrainingArguments(
@@ -103,47 +107,31 @@ def main():
             logging_strategy="no"
         )
 
-        precision = []
-        recall = []
-        f1 = []
-        for train, test in KFold(10, shuffle=True).split(X, y):
-            X_train, X_test = X[train], X[test]
-            y_train, y_test = y[train], y[test]
+        tokenizer = AutoTokenizer.from_pretrained(MODEL)
+        encoded_train, labels_train = tokenize_and_align_labels(tokenizer, X_train, y_train)
+        encoded_test, labels_test = tokenize_and_align_labels(tokenizer, X_test, y_test)
 
-            tokenizer = AutoTokenizer.from_pretrained(MODEL)
-            encoded_train, labels_train = tokenize_and_align_labels(tokenizer, X_train.tolist(), y_train.tolist())
-            encoded_test, labels_test = tokenize_and_align_labels(tokenizer, X_test.tolist(), y_test.tolist())
+        data_collator = DataCollatorForTokenClassification(tokenizer)
+        model = AutoModelForTokenClassification.from_pretrained(MODEL, num_labels=3)
+        trainer = Trainer(
+            model,
+            args,
+            compute_metrics=compute_metrics_token,
+            train_dataset=TorchData(encoded_train, labels_train),
+            eval_dataset=TorchData(encoded_test, labels_test),
+            data_collator=data_collator,
+            tokenizer=tokenizer
+        )
+        trainer.train()
+        eval_metrics = trainer.evaluate()
+        precision.append(eval_metrics['eval_precision'])
+        recall.append(eval_metrics['eval_recall'])
+        f1.append(eval_metrics['eval_f1'])
 
-            data_collator = DataCollatorForTokenClassification(tokenizer)
-            model = AutoModelForTokenClassification.from_pretrained(MODEL, num_labels=3)
-            trainer = Trainer(
-                model,
-                args,
-                compute_metrics=compute_metrics_token,
-                train_dataset=TorchData(encoded_train, labels_train),
-                eval_dataset=TorchData(encoded_test, labels_test),
-                data_collator=data_collator,
-                tokenizer=tokenizer
-            )
-            trainer.train()
-            eval_metrics = trainer.evaluate()
-            precision.append(eval_metrics['eval_precision'])
-            recall.append(eval_metrics['eval_recall'])
-            f1.append(eval_metrics['eval_f1'])
-
-        print(f'Ensemble BERT Token Model {i}')
-        print(f'Precision: {precision}')
-        print(f'Recall: {recall}')
-        print(f'F1 score: {f1}')
-
-        precision_all.append(np.mean(precision, axis=0))
-        recall_all.append(np.mean(recall, axis=0))
-        f1_all.append(np.mean(f1, axis=0))
-
-    print(f'Ensemble BERT TOken Models')
-    print(f'Precision scores: {precision_all}')
-    print(f'Recall scores: {recall_all}')
-    print(f'F1 scores: {f1_all}')
+    print(f'Ensemble DistilBERT Token Model')
+    print(f'Precision: {precision}')
+    print(f'Recall: {recall}')
+    print(f'F1 score: {f1}')
 
 
 if __name__ == '__main__':
